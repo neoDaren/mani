@@ -6,8 +6,9 @@ import {
 } from '../db';
 import { errorText, Sheet, useToast } from '../components/ui';
 import { markBackupDone, lastBackupAt } from '../lib/backupReminder';
+import { IconBack } from '../components/icons';
 
-const VERSION = '0.2.0';
+const VERSION = '0.2.1';
 
 function stamp(): string {
   const d = new Date();
@@ -100,7 +101,7 @@ function CategoryList({ type }: { type: 'expense' | 'income' }) {
   );
 }
 
-export function Settings() {
+export function Settings({ onBack }: { onBack: () => void }) {
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<Backup | null>(null);
@@ -132,6 +133,7 @@ export function Settings() {
 
   return (
     <div className="screen">
+      <button className="back" onClick={onBack}><IconBack /> Главная</button>
       <h1 className="title">Настройки</h1>
 
       <div className="subtitle">Категории расходов</div>
@@ -141,15 +143,11 @@ export function Settings() {
 
       <div className="subtitle">Резервная копия</div>
       <div className="card">
-        <p style={{ marginTop: 0 }}>
-          Данные хранятся только на этом iPhone. Если удалить значок «Мани» или очистить данные Safari, они пропадут —
-          поэтому раз в неделю-две сохраняйте копию в «Файлы».
-        </p>
-        <p className="small muted">
-          Последняя копия: {last ? new Date(last).toLocaleDateString('ru-RU') : 'ещё не делали'}
+        <p className="small muted" style={{ marginTop: 0 }}>
+          Последняя: {last ? new Date(last).toLocaleDateString('ru-RU') : 'не было'}
         </p>
         <div className="btns">
-          <button className="btn" onClick={backup}>Сохранить копию</button>
+          <button className="btn" onClick={backup}>Сохранить</button>
           <button className="btn secondary" onClick={() => fileRef.current?.click()}>Восстановить</button>
         </div>
         <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={(e) => {
@@ -165,7 +163,7 @@ export function Settings() {
           if (ok) toast('Таблица готова');
         }}>
           <span className="ico">📄</span>
-          <span className="main"><div className="name">Экспорт в таблицу (CSV)</div><div className="sub">Открывается в Numbers и Excel</div></span>
+          <span className="main"><div className="name">Экспорт в таблицу (CSV)</div></span>
         </button>
         <button className="item" onClick={async () => {
           const ok = await navigator.storage?.persist?.();
@@ -175,18 +173,12 @@ export function Settings() {
           <span className="ico">🛡️</span>
           <span className="main">
             <div className="name">Постоянное хранилище</div>
-            <div className="sub">{persisted ? 'Включено' : persisted === false ? 'Не включено — нажмите, чтобы запросить' : 'Недоступно в этом браузере'}</div>
+            <div className="sub">{persisted ? 'Включено' : persisted === false ? 'Выключено' : 'Недоступно'}</div>
           </span>
         </button>
       </div>
 
-      <div className="subtitle">О приложении</div>
-      <div className="card small">
-        <div>Мани {VERSION}. Работает без интернета, данные не покидают телефон.</div>
-        <div className="muted" style={{ marginTop: 6 }}>
-          Установка: открыть адрес в Safari → «Поделиться» → «На экран „Домой“». Обновления подхватываются сами при открытии с интернетом.
-        </div>
-      </div>
+      <p className="hint" style={{ textAlign: 'center' }}>Мани {VERSION}</p>
 
       {pending && (
         <Sheet title="Восстановить из копии?" onClose={() => setPending(null)}>

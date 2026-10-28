@@ -13,12 +13,10 @@ export function txTime(ms: number): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-export function TxRow({ t, account, onClick, showTime = true }: {
-  t: Tx; account?: Account; onClick?: () => void; showTime?: boolean;
-}) {
+export function TxRow({ t, account, onClick }: { t: Tx; account?: Account; onClick?: () => void }) {
   const sign = t.type === 'expense' ? '−' : t.amount >= 0 ? '+' : '−';
   const cls = t.type === 'expense' ? 'expense' : t.type === 'income' ? 'income' : 'muted';
-  const sub = [t.note && t.note !== t.category ? t.note : null, account?.name, showTime ? txTime(t.occurredAt) : null]
+  const sub = [t.note && t.note.toLowerCase() !== t.category.toLowerCase() ? t.note : null, account?.name]
     .filter(Boolean).join(' · ');
   return (
     <button className="item" onClick={onClick} disabled={!onClick}>

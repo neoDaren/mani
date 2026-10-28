@@ -65,7 +65,6 @@ export function History() {
       {data && data.rows.length > limit && (
         <button className="btn secondary" onClick={() => setLimit(limit + 200)}>Показать ещё</button>
       )}
-      <p className="hint">Нажмите на операцию, чтобы изменить сумму, тип, категорию, счёт или дату, либо удалить её.</p>
 
       {editing && editing.type !== 'adjustment' && (
         <TxEditor
@@ -81,7 +80,7 @@ export function History() {
         <Sheet title="Корректировка остатка" onClose={() => setEditing(null)}>
           <div className="card">
             <div className="mid num">{editing.amount > 0 ? '+' : '−'}{formatMoney(Math.abs(editing.amount))}</div>
-            <div className="muted small">{accById(editing.accountId)?.name} · создана сверкой остатка, в статистику не входит</div>
+            <div className="muted small">{accById(editing.accountId)?.name} · сверка остатка</div>
           </div>
           <button className="btn danger" onClick={async () => {
             await deleteTx(editing.id!);

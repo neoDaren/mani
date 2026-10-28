@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   addAccount, reconcile, removeAccount, restoreAccount, setDefaultAccount, updateAccount,
-  KIND_ICONS, KIND_LABELS, type Account, type AccountKind,
+  KIND_LABELS, type Account, type AccountKind,
 } from '../db';
 import { formatMoney } from '../lib/format';
 import { AmountInput, errorText, Sheet, useToast } from './ui';
@@ -44,18 +44,18 @@ export function AccountEditor({
     return (
       <Sheet title={`Сверка: ${account.name}`} onClose={onClose}>
         <div className="card">
-          <div className="muted small">В приложении сейчас</div>
+          <div className="muted small">В приложении</div>
           <div className="mid num">{formatMoney(balance ?? 0)}</div>
         </div>
         <div className="field">
-          <div className="label">Сколько на самом деле (из банка или кошелька)</div>
+          <div className="label">Сколько на самом деле</div>
           <AmountInput value={actual} onChange={setActual} allowNegative autoFocus />
         </div>
         {diff !== null && (
           <p className="hint" style={{ marginBottom: 14 }}>
             {diff === 0
               ? 'Остатки совпадают, корректировка не нужна.'
-              : `Будет создана корректировка ${diff > 0 ? '+' : '−'}${formatMoney(Math.abs(diff))}. Она меняет остаток, но не попадает в расходы и доходы.`}
+              : `Корректировка ${diff > 0 ? '+' : '−'}${formatMoney(Math.abs(diff))}, в статистику не входит`}
           </p>
         )}
         <div className="btns">
@@ -95,16 +95,15 @@ export function AccountEditor({
         <div className="chips">
           {KINDS.map((k) => (
             <button key={k} className={`chip ${k === kind ? 'on' : ''}`} onClick={() => setKind(k)}>
-              {KIND_ICONS[k]} {KIND_LABELS[k]}
+              {KIND_LABELS[k]}
             </button>
           ))}
         </div>
       </div>
 
       <div className="field">
-        <div className="label">{account ? 'Начальный остаток (на момент создания)' : 'Сколько сейчас на счёте'}</div>
+        <div className="label">{account ? 'Начальный остаток' : 'Остаток сейчас'}</div>
         <AmountInput value={initial} onChange={setInitial} allowNegative />
-        <p className="hint">Для кредитной карты с долгом нажмите «+», чтобы сделать остаток отрицательным.</p>
       </div>
 
       {error && <div className="error">{error}</div>}
@@ -131,7 +130,7 @@ export function AccountEditor({
       )}
       {account && mode === 'remove' && (
         <>
-          <p className="hint">Если по счёту есть операции, он уйдёт в архив: история и статистика сохранятся.</p>
+          <p className="hint">Счёт с операциями уйдёт в архив, история сохранится.</p>
           <div className="btns" style={{ marginTop: 8 }}>
             <button className="btn secondary" onClick={() => setMode('edit')}>Отмена</button>
             <button className="btn" style={{ background: 'var(--danger)' }} onClick={async () => {

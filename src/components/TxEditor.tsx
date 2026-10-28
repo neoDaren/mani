@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useState } from 'react';
-import { addCategory, addTx, deleteTx, listAccounts, listCategories, updateTx, KIND_ICONS, type Tx } from '../db';
+import { addCategory, addTx, deleteTx, listAccounts, listCategories, updateTx, type Tx } from '../db';
 import { fromDateInput, timeForDay, toDateInput } from '../lib/dates';
 import { formatMoney } from '../lib/format';
 import { AmountInput, errorText, Sheet, useToast } from './ui';
@@ -106,7 +106,7 @@ export function TxEditor({
         <div className="chips">
           {visibleAccounts.map((a) => (
             <button key={a.id} className={`chip ${a.id === v.accountId ? 'on' : ''}`} onClick={() => set({ accountId: a.id! })}>
-              {KIND_ICONS[a.kind]} {a.name}
+              {a.name}
             </button>
           ))}
         </div>

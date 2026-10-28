@@ -1,13 +1,20 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { UserError } from '../db';
 
 export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
+    // Пока окно открыто, экран под ним не прокручивается
+    const root = document.documentElement;
+    root.dataset.sheets = String(Number(root.dataset.sheets ?? 0) + 1);
+    return () => {
+      const n = Number(root.dataset.sheets ?? 1) - 1;
+      if (n > 0) root.dataset.sheets = String(n);
+      else delete root.dataset.sheets;
+    };
   }, []);
-  return (
+  // Окно рендерится в body — поверх нижней панели и вне прокручиваемого экрана
+  return createPortal(
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" role="dialog" aria-label={title} onClick={(e) => e.stopPropagation()}>
         <div className="sheet-grip" />
@@ -17,7 +24,8 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
