@@ -109,6 +109,73 @@ function buildNote(text: string, account: AccountRef | null): string {
   return note ? note[0].toUpperCase() + note.slice(1) : '';
 }
 
+export interface TransferDraft {
+  from: number | null;
+  to: number | null;
+  amount: number;
+  occurredAt: number;
+  note: string;
+}
+
+const TRANSFER_WORDS = /(^|[^\p{L}])(перев[её]\p{L}*|перевод\p{L}*|переки\p{L}*|скину\p{L}*|закину\p{L}*|сня\p{L}*|снят\p{L}*|пополни\p{L}*\s+(?:карту|счет|кошел))/u;
+
+/** Все упомянутые счета в порядке появления в тексте */
+function accountsInOrder(text: string, accounts: AccountRef[]): { acc: AccountRef; pos: number }[] {
+  const t = norm(text);
+  const found: { acc: AccountRef; pos: number }[] = [];
+  for (const a of accounts) {
+    let best = -1;
+    for (const v of variants(a.name)) {
+      const stem = v.length >= 4 ? v.slice(0, 4) : v;
+      const i = t.indexOf(v.length >= 2 ? v : stem);
+      const j = stem.length >= 4 ? t.search(new RegExp(`(?<!\\p{L})${stem}`, 'u')) : -1;
+      const k = [i, j >= 0 ? j : -1].filter((x) => x >= 0);
+      if (k.length && (best < 0 || Math.min(...k) < best)) best = Math.min(...k);
+    }
+    if (best >= 0) found.push({ acc: a, pos: best });
+  }
+  const cm = CASH_WORDS.exec(t);
+  const cashPos = cm ? cm.index + cm[1].length : -1;
+  const cash = accounts.find((a) => a.kind === 'cash');
+  if (cashPos >= 0 && cash && !found.some((f) => f.acc.id === cash.id)) found.push({ acc: cash, pos: cashPos });
+  return found.sort((a, b) => a.pos - b.pos);
+}
+
+/**
+ * Перевод между своими счетами: «перевёл 500 тысяч с Uzcard на Humo», «снял 200к с хумо» (на наличные).
+ * Возвращает null, если фраза не похожа на перевод.
+ */
+export function parseTransfer(text: string, ctx: { accounts: AccountRef[]; now?: Date }): TransferDraft | null {
+  const now = ctx.now ?? new Date();
+  const t = norm(text);
+  if (!TRANSFER_WORDS.test(t)) return null;
+  const date = extractDate(text, now);
+  const body = date ? date.rest : text;
+  const amount = parsePhrase(body).amount;
+  const found = accountsInOrder(body, ctx.accounts);
+  const nb = norm(body);
+  // «с X» — откуда, «на X» — куда; иначе — по порядку упоминания
+  const after = (prep: RegExp) =>
+    found.find((f) => prep.test(nb.slice(Math.max(0, f.pos - 6), f.pos)))?.acc ?? null;
+  let from = after(/(^|\s)(с|со|из)\s+(карты\s+|счета\s+)?$/u);
+  let to = after(/(^|\s)(на|в)\s+(карту\s+|счет\s+)?$/u);
+  const others = found.map((f) => f.acc).filter((a) => a !== from && a !== to);
+  if (!from) from = others.shift() ?? null;
+  if (!to) to = others.shift() ?? null;
+  // «снял с карты» без второго счёта — на наличные
+  if (/(^|[^\p{L}])сня/u.test(t) && from && !to) {
+    to = ctx.accounts.find((a) => a.kind === 'cash' && a.id !== from!.id) ?? null;
+  }
+  if (from && to && from.id === to.id) to = null;
+  return {
+    from: from?.id ?? null,
+    to: to?.id ?? null,
+    amount,
+    occurredAt: date ? timeForDay(date.day, now) : now.getTime(),
+    note: '',
+  };
+}
+
 export function parseRequest(
   text: string,
   ctx: { accounts: AccountRef[]; categories: { expense: string[]; income: string[] }; now?: Date },

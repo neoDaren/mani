@@ -69,3 +69,17 @@ const notes: [string, string][] = [
 ];
 for (const [phrase, want] of notes) assert.equal(parseRequest(phrase, ctx).note, want, `Заметка «${phrase}»`);
 console.log('notes ok');
+import { parseTransfer } from '../src/lib/request';
+const tr: [string, { from: number | null; to: number | null; amount: number } | null][] = [
+  ['перевёл 500 тысяч с Uzcard на Humo', { from: 2, to: 3, amount: 500000 }],
+  ['перевел на хумо с узкарта 200к', { from: 2, to: 3, amount: 200000 }],
+  ['скинул 100 тысяч с payme на humo', { from: 4, to: 3, amount: 100000 }],
+  ['снял 300к с хумо', { from: 3, to: 1, amount: 300000 }],
+  ['перекинул 50к с наличных на пейми', { from: 1, to: 4, amount: 50000 }],
+  ['такси 20 тысяч с humo', null],
+];
+for (const [phrase, want] of tr) {
+  const got = parseTransfer(phrase, ctx);
+  assert.deepEqual(got && { from: got.from, to: got.to, amount: got.amount }, want, `Перевод «${phrase}»`);
+}
+console.log('transfers parse ok');

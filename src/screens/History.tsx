@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { deleteTx, listAccounts, listTx, type Tx } from '../db';
 import { formatMoney } from '../lib/format';
 import { MONTHS_GEN } from '../lib/periods';
+import { TransferEditor } from '../components/TransferEditor';
 import { TxEditor } from '../components/TxEditor';
 import { TxRow } from '../components/TxRow';
 import { Sheet, useToast } from '../components/ui';
@@ -56,7 +57,8 @@ export function History() {
           </div>
           <div className="list">
             {g.items.map((t) => (
-              <TxRow key={t.id} t={t} account={accountId ? undefined : accById(t.accountId)} onClick={() => setEditing(t)} />
+              <TxRow key={t.id} t={t} account={accountId ? undefined : accById(t.accountId)} onClick={() => setEditing(t)}
+                nameOf={(id) => accById(id)?.name} perspective={accountId} />
             ))}
           </div>
         </div>
@@ -66,11 +68,17 @@ export function History() {
         <button className="btn secondary" onClick={() => setLimit(limit + 200)}>Показать ещё</button>
       )}
 
-      {editing && editing.type !== 'adjustment' && (
+      {editing && editing.type === 'transfer' && (
+        <TransferEditor
+          initial={{ id: editing.id, from: editing.accountId, to: editing.toAccountId ?? null, amount: editing.amount, occurredAt: editing.occurredAt, note: editing.note }}
+          onClose={() => setEditing(null)}
+        />
+      )}
+      {editing && (editing.type === 'expense' || editing.type === 'income') && (
         <TxEditor
           title="Изменить операцию"
           initial={{
-            id: editing.id, type: editing.type, amount: editing.amount, category: editing.category,
+            id: editing.id, type: editing.type as 'expense' | 'income', amount: editing.amount, category: editing.category,
             note: editing.note, accountId: editing.accountId, occurredAt: editing.occurredAt,
           }}
           onClose={() => setEditing(null)}

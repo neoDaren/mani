@@ -1,17 +1,20 @@
 import Dexie, { type Table } from 'dexie';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from './lib/categories';
 
-export type TxType = 'expense' | 'income' | 'adjustment';
+export type TxType = 'expense' | 'income' | 'adjustment' | 'transfer';
 export type AccountKind = 'card' | 'cash' | 'wallet' | 'deposit' | 'other';
 
 export interface Tx {
   id?: number;
   type: TxType;
-  /** Сумма в сумах. Для expense/income > 0; для adjustment — разница со знаком */
+  /** Сумма в сумах. Для expense/income/transfer > 0; для adjustment — разница со знаком */
   amount: number;
   category: string;
   note: string;
+  /** Счёт операции; для перевода — счёт, с которого ушли деньги */
   accountId: number;
+  /** Только для перевода: счёт, на который пришли деньги */
+  toAccountId?: number;
   occurredAt: number;
   createdAt: number;
 }
@@ -156,7 +159,9 @@ export async function removeAccount(id: number): Promise<'deleted' | 'archived'>
   return db.transaction('rw', db.accounts, db.transactions, async () => {
     const acc = await db.accounts.get(id);
     if (!acc) return 'deleted';
-    const used = await db.transactions.where('accountId').equals(id).count();
+    const used =
+      (await db.transactions.where('accountId').equals(id).count()) +
+      (await db.transactions.filter((t) => t.toAccountId === id).count());
     if (used > 0) {
       await db.accounts.update(id, { archivedAt: Date.now(), isDefault: 0 });
     } else {
@@ -174,13 +179,18 @@ export async function restoreAccount(id: number) {
   await db.accounts.update(id, { archivedAt: null });
 }
 
-/** Остаток = начальный + доходы − расходы + корректировки. Не хранится, всегда считается. */
+/** Остаток = начальный + доходы − расходы ± переводы + корректировки. Не хранится, всегда считается. */
 export async function balances(): Promise<Map<number, number>> {
   const accounts = await db.accounts.toArray();
   const map = new Map<number, number>(accounts.map((a) => [a.id!, a.initialBalance]));
+  const add = (id: number, d: number) => map.set(id, (map.get(id) ?? 0) + d);
   await db.transactions.each((t) => {
-    const delta = t.type === 'expense' ? -t.amount : t.amount;
-    map.set(t.accountId, (map.get(t.accountId) ?? 0) + delta);
+    if (t.type === 'transfer') {
+      add(t.accountId, -t.amount);
+      if (t.toAccountId) add(t.toAccountId, t.amount);
+    } else {
+      add(t.accountId, t.type === 'expense' ? -t.amount : t.amount);
+    }
   });
   return map;
 }
@@ -209,7 +219,29 @@ function validateTx(t: Omit<Tx, 'id' | 'createdAt'>) {
   if (t.type !== 'adjustment' && !(t.amount > 0)) throw new UserError('Введите сумму больше нуля');
   if (!Number.isFinite(t.amount)) throw new UserError('Неверная сумма');
   if (!t.accountId) throw new UserError('Выберите счёт');
+  if (t.type === 'transfer') {
+    if (!t.toAccountId) throw new UserError('Выберите, на какой счёт перевести');
+    if (t.toAccountId === t.accountId) throw new UserError('Выберите два разных счёта');
+    return;
+  }
   if (!t.category.trim()) throw new UserError('Выберите категорию');
+}
+
+export const TRANSFER_CATEGORY = 'Перевод';
+
+/** Перевод между своими счетами: не расход и не доход, меняет остатки обоих счетов */
+export async function addTransfer(t: { from: number; to: number; amount: number; note?: string; occurredAt: number }) {
+  return addTx({
+    type: 'transfer', amount: t.amount, category: TRANSFER_CATEGORY, note: t.note ?? '',
+    accountId: t.from, toAccountId: t.to, occurredAt: t.occurredAt,
+  });
+}
+
+export async function updateTransfer(id: number, t: { from: number; to: number; amount: number; note?: string; occurredAt: number }) {
+  return updateTx(id, {
+    type: 'transfer', amount: t.amount, category: TRANSFER_CATEGORY, note: t.note ?? '',
+    accountId: t.from, toAccountId: t.to, occurredAt: t.occurredAt,
+  });
 }
 
 export async function addTx(t: Omit<Tx, 'id' | 'createdAt'>): Promise<number> {
@@ -231,34 +263,55 @@ export async function listTx(filter: { accountId?: number; from?: number; to?: n
   const to = filter.to ?? Number.MAX_SAFE_INTEGER;
   const rows = await db.transactions.where('occurredAt').between(from, to, true, false).toArray();
   return rows
-    .filter((t) => filter.accountId === undefined || t.accountId === filter.accountId)
+    .filter((t) => filter.accountId === undefined || t.accountId === filter.accountId || t.toAccountId === filter.accountId)
     .sort((a, b) => b.occurredAt - a.occurredAt || b.id! - a.id!);
 }
 
 export interface PeriodStats {
   expense: number;
   income: number;
+  /** Расходы по категориям, от большей к меньшей */
   byCategory: { category: string; total: number }[];
+  incomeByCategory: { category: string; total: number }[];
 }
 
-/** Корректировки не входят в расходы и доходы */
+/** Корректировки и переводы не входят в расходы и доходы */
 export async function getStats(from: number, to: number, accountId?: number): Promise<PeriodStats> {
   const rows = await listTx({ from, to, accountId });
   let expense = 0;
   let income = 0;
-  const cat = new Map<string, number>();
+  const exp = new Map<string, number>();
+  const inc = new Map<string, number>();
   for (const t of rows) {
+    if (accountId !== undefined && t.accountId !== accountId) continue;
     if (t.type === 'expense') {
       expense += t.amount;
-      cat.set(t.category, (cat.get(t.category) ?? 0) + t.amount);
+      exp.set(t.category, (exp.get(t.category) ?? 0) + t.amount);
     } else if (t.type === 'income') {
       income += t.amount;
+      inc.set(t.category, (inc.get(t.category) ?? 0) + t.amount);
     }
   }
-  const byCategory = [...cat.entries()]
-    .map(([category, total]) => ({ category, total }))
-    .sort((a, b) => b.total - a.total);
-  return { expense, income, byCategory };
+  const sorted = (m: Map<string, number>) =>
+    [...m.entries()].map(([category, total]) => ({ category, total })).sort((a, b) => b.total - a.total);
+  return { expense, income, byCategory: sorted(exp), incomeByCategory: sorted(inc) };
+}
+
+/** Суммы по корзинам периода: дни недели/месяца или месяцы года */
+export async function getSeries(
+  buckets: [number, number][],
+  type: 'expense' | 'income',
+  accountId?: number,
+): Promise<number[]> {
+  if (buckets.length === 0) return [];
+  const rows = await listTx({ from: buckets[0][0], to: buckets[buckets.length - 1][1], accountId });
+  const out = buckets.map(() => 0);
+  for (const t of rows) {
+    if (t.type !== type || (accountId !== undefined && t.accountId !== accountId)) continue;
+    const i = buckets.findIndex(([a, b]) => t.occurredAt >= a && t.occurredAt < b);
+    if (i >= 0) out[i] += t.amount;
+  }
+  return out;
 }
 
 // ---------- Категории ----------
@@ -345,6 +398,9 @@ export function validateBackup(data: unknown): Backup {
   const ids = new Set(b.accounts.map((a) => a.id));
   if (b.accounts.length === 0) throw new UserError('В копии нет счетов');
   for (const t of b.transactions) {
+    if (t.type === 'transfer' && !ids.has(t.toAccountId)) {
+      throw new UserError('Файл копии повреждён: перевод без счёта');
+    }
     if (!ids.has(t.accountId) || typeof t.amount !== 'number' || typeof t.occurredAt !== 'number') {
       throw new UserError('Файл копии повреждён: операция без счёта или суммы');
     }
@@ -368,14 +424,20 @@ export async function exportCsv(): Promise<string> {
   const accounts = new Map((await db.accounts.toArray()).map((a) => [a.id, a.name]));
   const rows = await listTx();
   const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
-  const typeName = { expense: 'Расход', income: 'Доход', adjustment: 'Корректировка' };
+  const typeName = { expense: 'Расход', income: 'Доход', adjustment: 'Корректировка', transfer: 'Перевод' };
   const lines = ['Дата;Тип;Сумма;Категория;Счёт;Заметка'];
   for (const t of rows.reverse()) {
     const d = new Date(t.occurredAt);
     const p = (n: number) => String(n).padStart(2, '0');
     const date = `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
     lines.push(
-      [date, typeName[t.type], String(t.amount), esc(t.category), esc(accounts.get(t.accountId) ?? ''), esc(t.note)].join(';'),
+      [
+        date, typeName[t.type], String(t.amount), esc(t.category),
+        esc(t.type === 'transfer'
+          ? `${accounts.get(t.accountId) ?? ''} → ${accounts.get(t.toAccountId!) ?? ''}`
+          : (accounts.get(t.accountId) ?? '')),
+        esc(t.note),
+      ].join(';'),
     );
   }
   // BOM — чтобы Excel и Numbers открыли кириллицу без искажений

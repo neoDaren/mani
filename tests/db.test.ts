@@ -96,3 +96,42 @@ async function main() {
   console.log('db: все проверки пройдены');
 }
 main().catch((e) => { console.error(e); process.exit(1); });
+import { addTransfer, updateTransfer, listTx as listTx2, getSeries } from '../src/db';
+async function transfers() {
+  const { ManiDB: M, useDatabase: use, ensureSeed: seed, addAccount: add, balances: bal, getStats: st, removeAccount: rm, exportBackup: ex, importBackup: im } = await import('../src/db');
+  use(new M('tr-' + Math.random()));
+  await seed();
+  const cash = (await (await import('../src/db')).listAccounts())[0].id!;
+  const a = await add({ name: 'Uzcard', kind: 'card', initialBalance: 1_000_000 });
+  const b = await add({ name: 'Humo', kind: 'card', initialBalance: 0 });
+  const id = await addTransfer({ from: a, to: b, amount: 300_000, occurredAt: Date.now() });
+  let m = await bal();
+  assert.equal(m.get(a), 700_000);
+  assert.equal(m.get(b), 300_000);
+  const s = await st(0, Date.now() + 1e9);
+  assert.deepEqual([s.expense, s.income], [0, 0]);
+  await assert.rejects(addTransfer({ from: a, to: a, amount: 1, occurredAt: Date.now() }));
+  await updateTransfer(id, { from: b, to: a, amount: 100_000, occurredAt: Date.now() });
+  m = await bal();
+  assert.equal(m.get(a), 1_100_000);
+  assert.equal(m.get(b), -100_000);
+  assert.equal((await listTx2({ accountId: b })).length, 1);
+  assert.equal((await listTx2({ accountId: cash })).length, 0);
+  // Счёт, на который только переводили, архивируется, а не удаляется
+  assert.equal(await rm(b), 'archived');
+  // Копия с переводом восстанавливается
+  const backup = JSON.parse(JSON.stringify(await ex()));
+  use(new M('tr2-' + Math.random()));
+  await im(backup);
+  m = await bal();
+  assert.equal(m.get(a), 1_100_000);
+  // Ряд для графика
+  const now = new Date(2026, 9, 28, 12).getTime();
+  const { addTx: at } = await import('../src/db');
+  await at({ type: 'expense', amount: 10, category: 'X', note: '', accountId: a, occurredAt: now });
+  await at({ type: 'expense', amount: 5, category: 'X', note: '', accountId: a, occurredAt: now - 864e5 });
+  const day = (d: number) => new Date(2026, 9, d).getTime();
+  assert.deepEqual(await getSeries([[day(27), day(28)], [day(28), day(29)]], 'expense'), [5, 10]);
+  console.log('db transfers ok');
+}
+setTimeout(() => transfers().catch((e) => { console.error(e); process.exit(1); }), 500);

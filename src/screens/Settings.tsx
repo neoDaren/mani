@@ -8,7 +8,7 @@ import { errorText, Sheet, useToast } from '../components/ui';
 import { markBackupDone, lastBackupAt } from '../lib/backupReminder';
 import { IconBack } from '../components/icons';
 
-const VERSION = '0.2.1';
+const VERSION = '0.3.0';
 
 function stamp(): string {
   const d = new Date();

@@ -4,8 +4,9 @@ import { balances, db, getStats, listAccounts, listCategories, listTx, type Tx }
 import { backupDue } from '../lib/backupReminder';
 import { formatMoney } from '../lib/format';
 import { periodRange } from '../lib/periods';
-import { parseRequest } from '../lib/request';
+import { parseRequest, parseTransfer } from '../lib/request';
 import { IconGear } from '../components/icons';
+import { TransferEditor, type TransferValue } from '../components/TransferEditor';
 import { TxEditor, type EditorValue } from '../components/TxEditor';
 import { TxRow } from '../components/TxRow';
 import { useToast } from '../components/ui';
@@ -14,6 +15,7 @@ export function Home({ goAccounts, goHistory, goSettings }: { goAccounts: () => 
   const toast = useToast();
   const [text, setText] = useState('');
   const [editor, setEditor] = useState<{ value: EditorValue; title: string } | null>(null);
+  const [transfer, setTransfer] = useState<TransferValue | null>(null);
 
   const data = useLiveQuery(async () => {
     const accounts = await listAccounts();
@@ -34,10 +36,13 @@ export function Home({ goAccounts, goHistory, goSettings }: { goAccounts: () => 
 
   const parse = () => {
     if (!data || !text.trim()) return;
-    const d = parseRequest(text, {
-      accounts: data.accounts.map((a) => ({ id: a.id!, name: a.name, kind: a.kind, isDefault: a.isDefault })),
-      categories: data.categories,
-    });
+    const accounts = data.accounts.map((a) => ({ id: a.id!, name: a.name, kind: a.kind, isDefault: a.isDefault }));
+    const tr = parseTransfer(text, { accounts });
+    if (tr) {
+      setTransfer({ ...tr, amount: tr.amount || null });
+      return;
+    }
+    const d = parseRequest(text, { accounts, categories: data.categories });
     if (d.unknownAccount) toast(`Счёт «${d.unknownAccount}» не найден`);
     setEditor({ title: d.amount ? 'Проверьте' : 'Введите сумму', value: { ...d, amount: d.amount || null } });
   };
@@ -50,6 +55,9 @@ export function Home({ goAccounts, goHistory, goSettings }: { goAccounts: () => 
 
   const edit = (t: Tx) => {
     if (t.type === 'adjustment') return goHistory();
+    if (t.type === 'transfer') {
+      return setTransfer({ id: t.id, from: t.accountId, to: t.toAccountId ?? null, amount: t.amount, occurredAt: t.occurredAt, note: t.note });
+    }
     setEditor({
       title: 'Изменить',
       value: { id: t.id, type: t.type, amount: t.amount, category: t.category, note: t.note, accountId: t.accountId, occurredAt: t.occurredAt },
@@ -120,7 +128,9 @@ export function Home({ goAccounts, goHistory, goSettings }: { goAccounts: () => 
             <button className="btn link" onClick={goHistory}>Все</button>
           </div>
           <div className="list">
-            {data.recent.map((t) => <TxRow key={t.id} t={t} onClick={() => edit(t)} />)}
+            {data.recent.map((t) => (
+              <TxRow key={t.id} t={t} onClick={() => edit(t)} nameOf={(id) => data.accounts.find((a) => a.id === id)?.name} />
+            ))}
           </div>
         </>
       )}
@@ -128,6 +138,7 @@ export function Home({ goAccounts, goHistory, goSettings }: { goAccounts: () => 
       {editor && (
         <TxEditor initial={editor.value} title={editor.title} onClose={() => setEditor(null)} onSaved={() => setText('')} />
       )}
+      {transfer && <TransferEditor initial={transfer} onClose={() => { setTransfer(null); setText(''); }} />}
     </div>
   );
 }

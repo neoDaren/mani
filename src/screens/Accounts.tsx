@@ -3,9 +3,11 @@ import { useState } from 'react';
 import { balances, listAccounts, type Account } from '../db';
 import { formatMoney } from '../lib/format';
 import { AccountEditor } from '../components/AccountEditor';
+import { TransferEditor } from '../components/TransferEditor';
 
 export function Accounts() {
   const [open, setOpen] = useState<{ account?: Account } | null>(null);
+  const [transfer, setTransfer] = useState(false);
   const data = useLiveQuery(async () => {
     const all = await listAccounts(true);
     const bal = await balances();
@@ -36,7 +38,10 @@ export function Accounts() {
       </div>
 
       <div className="list">{data?.active.map(row)}</div>
-      <button className="btn" onClick={() => setOpen({})}>＋ Добавить счёт</button>
+      <div className="btns">
+        <button className="btn" onClick={() => setTransfer(true)} disabled={(data?.active.length ?? 0) < 2}>⇄ Перевод</button>
+        <button className="btn secondary" onClick={() => setOpen({})}>＋ Счёт</button>
+      </div>
 
       {data && data.archived.length > 0 && (
         <>
@@ -45,6 +50,12 @@ export function Accounts() {
         </>
       )}
 
+      {transfer && (
+        <TransferEditor
+          initial={{ from: data?.active.find((a) => a.isDefault)?.id ?? null, to: null, amount: null, occurredAt: Date.now(), note: '' }}
+          onClose={() => setTransfer(false)}
+        />
+      )}
       {open && (
         <AccountEditor
           account={open.account}

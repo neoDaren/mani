@@ -55,3 +55,43 @@ export function periodTitle(period: Period, range: [number, number]): string {
 }
 
 export { MONTHS_GEN };
+
+const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+const WEEKDAYS_SHORT = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+
+/** Корзины для графика: неделя и месяц — по дням, год — по месяцам, день — по 6 часов. */
+export function periodBuckets(period: Period, range: [number, number]): { range: [number, number]; label: string; full: string }[] {
+  const start = new Date(range[0]);
+  const y = start.getFullYear();
+  const m = start.getMonth();
+  const d = start.getDate();
+  const out: { range: [number, number]; label: string; full: string }[] = [];
+  if (period === 'year') {
+    for (let i = 0; i < 12; i++) {
+      out.push({
+        range: [new Date(y, i, 1).getTime(), new Date(y, i + 1, 1).getTime()],
+        label: MONTHS_SHORT[i][0].toUpperCase(),
+        full: `${MONTHS_SHORT[i]} ${y}`,
+      });
+    }
+  } else if (period === 'day') {
+    for (let h = 0; h < 24; h += 6) {
+      out.push({
+        range: [new Date(y, m, d, h).getTime(), new Date(y, m, d, h + 6).getTime()],
+        label: `${h}–${h + 6}`,
+        full: `${String(h).padStart(2, '0')}:00–${String(h + 6).padStart(2, '0')}:00`,
+      });
+    }
+  } else {
+    for (let i = 0; ; i++) {
+      const a = new Date(y, m, d + i);
+      if (a.getTime() >= range[1]) break;
+      out.push({
+        range: [a.getTime(), new Date(y, m, d + i + 1).getTime()],
+        label: period === 'week' ? WEEKDAYS_SHORT[a.getDay()] : String(a.getDate()),
+        full: `${a.getDate()} ${MONTHS_GEN[a.getMonth()]}, ${WEEKDAYS_SHORT[a.getDay()]}`,
+      });
+    }
+  }
+  return out;
+}
